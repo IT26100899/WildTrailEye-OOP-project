@@ -1,0 +1,198 @@
+package com.wildtrail.modules.bookings;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+import java.util.Map;
+import com.wildtrail.repository.JdbcInsert;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+/** SQL access for bookings; BookingService decides whether an operation is allowed. */
+@Repository
+// JdbcBookingRepository: Repository for the WildTrail application.
+public class JdbcBookingRepository {
+    // Shared by the admin list, customer history and booking confirmation.
+    private static final String DETAIL_SELECT = """
+            SELECT b.id, b.reference, b.safari_date AS "safariDate", b.time_slot AS "timeSlot",
+                   b.guests, b.total_amount AS "totalAmount", b.status,
+                   b.special_requests AS "specialRequests", b.pickup_place AS "pickupPlace",
+                   b.package_amount AS "packageAmount", b.vehicle_amount AS "vehicleAmount",
+                   b.created_at AS "createdAt",
+                   b.customer_id AS "customerId", c.full_name AS "customerName",
+                   c.email AS "customerEmail", c.phone AS "customerPhone", u.role AS "customerRole",
+                   b.package_id AS "packageId", p.name AS "packageName",
+                   d.name AS "destinationName", b.vehicle_id AS "vehicleId",
+                   v.name AS "vehicleName", v.registration_number AS "vehicleNumber", pay.method AS "paymentMethod",
+                   pay.status AS "paymentStatus", pay.transaction_ref AS "transactionRef",
+                   pay.paid_at AS "paidAt", pay.created_at AS "paymentCreatedAt",
+                   pay.amount AS "paymentAmount"
+            FROM bookings b
+            JOIN customers c ON c.id = b.customer_id
+            LEFT JOIN users u ON u.id = c.user_id
+            JOIN safari_packages p ON p.id = b.package_id
+            JOIN destinations d ON d.id = p.destination_id
+            JOIN vehicles v ON v.id = b.vehicle_id
+            LEFT JOIN payments pay ON pay.booking_id = b.id
+            """;
+    private final JdbcTemplate jdbc;
+
+    public JdbcBookingRepository(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    // Handles all detailed using the existing project logic.
+    public List<Map<String, Object>> allDetailed() {
+        return this.jdbc.queryForList(DETAIL_SELECT + " ORDER BY b.created_at DESC");
+    }
+
+    // Handles for customer using the existing project logic.
+    public List<Map<String, Object>> forCustomer(int customerId) {
+        return this.jdbc.queryForList(
+                DETAIL_SELECT + " WHERE b.customer_id=? ORDER BY b.created_at DESC",
+                customerId);
+    }
+
+    // Handles by reference using the existing project logic.
+    public List<Map<String, Object>> byReference(String reference) {
+        return this.jdbc.queryForList(
+                DETAIL_SELECT + " WHERE b.reference=? ORDER BY b.created_at DESC",
+                reference);
+    }
+
+    // Handles basic using the existing project logic.
+    public Map<String, Object> basic(int id) {
+        // A compact row is enough for ownership and status checks.
+        String sql = """
+                SELECT id, reference, customer_id AS "customerId", package_id AS "packageId",
+                       vehicle_id AS "vehicleId", safari_date AS "safariDate",
+                       time_slot AS "timeSlot", guests,
+                       special_requests AS "specialRequests", pickup_place AS "pickupPlace", total_amount AS "totalAmount", status
+                FROM bookings WHERE id = ?
+                """;
+        List<Map<String, Object>> rows = this.jdbc.queryForList(sql, id);
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    // Handles count vehicle bookings using the existing project logic.
+    public int countVehicleBookings(int vehicleId, LocalDate date, String slot) {
+        String sql = """
+                SELECT COUNT(*) FROM bookings
+                WHERE vehicle_id = ? AND safari_date = ? AND time_slot = ?
+                      AND status <> 'CANCELLED'
+                """;
+        Integer count = this.jdbc.queryForObject(sql, Integer.class, vehicleId, date, slot);
+        return count == null ? 0 : count;
+    }
+
+    // Handles available vehicle ids using the existing project logic.
+    public List<Integer> availableVehicleIds(LocalDate date, String slot) {
+        String sql = """
+                SELECT v.id FROM vehicles v
+                WHERE v.available = TRUE
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bookings b
+                      WHERE b.vehicle_id = v.id AND b.safari_date = ?
+                        AND b.time_slot = ? AND b.status <> 'CANCELLED'
+                  )
+                ORDER BY v.id
+                """;
+        return this.jdbc.queryForList(sql, Integer.class, date, slot);
+    }
+
+    // Creates a new record using the existing validation and storage rules.
+    public int create(Map<String, Object> values) {
+        // Prepared placeholders keep request values separate from SQL text.
+        String sql = """
+                INSERT INTO bookings(reference, customer_id, package_id, vehicle_id,
+                                     safari_date, time_slot, guests, special_requests,
+                                     total_amount, status, pickup_place, package_amount, vehicle_amount)
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, NULLIF(?, ''), ?, ?) RETURNING id
+                """;
+        return JdbcInsert.id(this.jdbc, sql, new Object[]{
+                values.get("reference"), values.get("customerId"), values.get("packageId"),
+                values.get("vehicleId"), values.get("safariDate"), values.get("timeSlot"),
+                values.get("guests"), values.get("specialRequests"), values.get("totalAmount"),
+                values.get("status"), values.get("pickupPlace"), values.get("packageAmount"), values.get("vehicleAmount")});
+    }
+
+    // Locking rows prevents simultaneous requests from taking the same resource.
+    public void lockGuideSchedule() {
+        jdbc.queryForObject("SELECT id FROM guide_schedule_lock WHERE id=1 FOR UPDATE", Integer.class);
+    }
+
+    // Handles lock vehicle using the existing project logic.
+    public void lockVehicle(int id) {
+        jdbc.queryForObject("SELECT id FROM vehicles WHERE id=? FOR UPDATE", Integer.class, id);
+    }
+
+    // Handles lock booking using the existing project logic.
+    public Map<String, Object> lockBooking(int id) {
+        // The caller must be inside a transaction for this row lock to remain held.
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id FROM bookings WHERE id=? FOR UPDATE", id);
+        return rows.isEmpty() ? null : basic(id);
+    }
+
+    // Handles overlaps using the existing project logic.
+    public boolean overlaps(int vehicleId, LocalDate date, String slot, int durationHours, int excludedId) {
+        // Compare full time ranges, not only matching start times.
+        int start = LocalTime.parse(slot).toSecondOfDay();
+        int end = start + durationHours * 3600;
+        String sql = """
+                SELECT b.time_slot AS "slot", p.duration_hours AS "hours"
+                FROM bookings b
+                JOIN safari_packages p ON p.id = b.package_id
+                WHERE b.vehicle_id = ? AND b.safari_date = ?
+                  AND b.status <> 'CANCELLED' AND b.id <> ?
+                """;
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                sql, vehicleId, date, excludedId);
+        // Two departures overlap when each starts before the other finishes.
+        return rows.stream().anyMatch(row -> {
+            int otherStart = LocalTime.parse(row.get("slot").toString()).toSecondOfDay();
+            int otherEnd = otherStart + ((Number) row.get("hours")).intValue() * 3600;
+            return start < otherEnd && otherStart < end;
+        });
+    }
+
+    // Handles edit using the existing project logic.
+    public void edit(int id, LocalDate date, String slot, int guests, String requests, double total, String pickup, double packageAmount, double vehicleAmount) {
+        // Keep a previously assigned guide from being double-booked on the new date.
+        String guideConflictSql = """
+                SELECT COUNT(*) FROM booking_guide_assignments mine
+                JOIN booking_guide_assignments other ON other.guide_id = mine.guide_id
+                JOIN bookings b ON b.id = other.booking_id
+                WHERE mine.booking_id = ? AND b.id <> ? AND b.safari_date = ?
+                  AND b.status <> 'CANCELLED'
+                """;
+        Integer guideConflicts = jdbc.queryForObject(
+                guideConflictSql, Integer.class, id, id, date);
+        if (guideConflicts != null && guideConflicts > 0) {
+            throw com.wildtrail.exception.ApiException.conflict(
+                    "Assigned guide is unavailable on the requested date. Contact staff.");
+        }
+        jdbc.update("""
+                UPDATE bookings
+                SET safari_date = ?, time_slot = ?, guests = ?, special_requests = ?,
+                    total_amount = ?, pickup_place = NULLIF(?, ''), package_amount = ?, vehicle_amount = ?, updated_at = NOW()
+                WHERE id = ?
+                """, date, slot, guests, requests, total, pickup, packageAmount, vehicleAmount, id);
+        // Pending payment follows the revised quote in the same transaction.
+        jdbc.update("""
+                UPDATE payments SET amount = ?
+                WHERE booking_id = ? AND status = 'PENDING'
+                """, total, id);
+    }
+
+    // Updates existing data without changing the stored format.
+    public void updateBookingStatus(int id, String status) {
+        this.jdbc.update("UPDATE bookings SET status=?, updated_at=NOW() WHERE id=?", new Object[]{status, id});
+    }
+
+    // Deletes a matching record according to existing rules.
+    public boolean delete(int id) {
+        return this.jdbc.update("DELETE FROM bookings WHERE id=?", new Object[]{id}) > 0;
+    }
+}
+

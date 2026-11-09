@@ -1,0 +1,60 @@
+# Member 04 - Senevirathna M.K.K.T
+
+Group: **26-MTR-Y1S2-WD-009**  
+Student ID: **IT26100899**  
+Student email: **IT26100899@my.sliit.lk**  
+Component: **Guide and Vehicle Management**
+
+## Scope
+
+Guide schedules, vehicle availability/maintenance fields, registration number, private owner CRUD, driver assignment and resources.txt file CRUD belong here. See [vehicle ownership behavior](../../docs/ACCOUNT_BOOKING_REVIEWS.md) and the [vehicle owner browser checks](../../qa/vehicle-owner.mjs).
+
+## Java files to understand and develop
+
+- [`backend/src/main/java/com/wildtrail/modules/resources/FamilySafariJeep.java`](../../backend/src/main/java/com/wildtrail/modules/resources/FamilySafariJeep.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/FileGuideRepository.java`](../../backend/src/main/java/com/wildtrail/modules/resources/FileGuideRepository.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/Guide.java`](../../backend/src/main/java/com/wildtrail/modules/resources/Guide.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/GuideController.java`](../../backend/src/main/java/com/wildtrail/modules/resources/GuideController.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/HiluxSafariJeep.java`](../../backend/src/main/java/com/wildtrail/modules/resources/HiluxSafariJeep.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/JdbcVehicleRepository.java`](../../backend/src/main/java/com/wildtrail/modules/resources/JdbcVehicleRepository.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/LuxuryJeep.java`](../../backend/src/main/java/com/wildtrail/modules/resources/LuxuryJeep.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/NaturalistGuide.java`](../../backend/src/main/java/com/wildtrail/modules/resources/NaturalistGuide.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/SafariJeep.java`](../../backend/src/main/java/com/wildtrail/modules/resources/SafariJeep.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/TeamController.java`](../../backend/src/main/java/com/wildtrail/modules/resources/TeamController.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/Vehicle.java`](../../backend/src/main/java/com/wildtrail/modules/resources/Vehicle.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/VehicleController.java`](../../backend/src/main/java/com/wildtrail/modules/resources/VehicleController.java)
+- [`backend/src/main/java/com/wildtrail/modules/resources/VehicleService.java`](../../backend/src/main/java/com/wildtrail/modules/resources/VehicleService.java)
+
+## UI files
+
+Vehicle records include an optional registration number, managed through the vehicle editor and displayed in booking statements. Existing unnumbered vehicles display **Pending assignment**.
+
+The vehicle editor also stores owner name, telephone, address and ID/NIC. These fields are restricted to the administrator fleet view and excluded from public vehicle responses. Updates preserve omitted fields; an explicit blank clears a field. Deleting an unused vehicle removes its owner metadata, while booking history still restricts vehicle deletion.
+
+- [`src/app/client/vehicles/page.tsx`](../../src/app/client/vehicles/page.tsx)
+- [`src/app/admin/(panel)/vehicles/page.tsx`](../../src/app/admin/%28panel%29/vehicles/page.tsx)
+- [`src/app/admin/(panel)/guides/page.tsx`](../../src/app/admin/%28panel%29/guides/page.tsx)
+
+## Shared files - change only your own function
+
+- [`src/components/client/cards.tsx`](../../src/components/client/cards.tsx): VehicleCard
+- [`src/components/admin/managers.tsx`](../../src/components/admin/managers.tsx): VehiclesManager and GuidesManager
+- [`src/app/client/about/page.tsx`](../../src/app/client/about/page.tsx): guide/team display
+
+## Viva demonstration
+
+Add a vehicle with registration and owner details → expand the private owner view → edit and reload → verify public pages omit owner metadata → clear an owner field or remove an unused vehicle. Add/read/update a guide, assign it and restart to prove guide file persistence.
+
+## Persistence and file handling
+
+H2 SQL stores vehicles and most other entities. Guide records use `resources.txt` file CRUD. The `/admin/files` page saves and reads text snapshots of SQL-backed modules.
+
+## GitHub Desktop
+
+1. Accept the private repository invitation sent to your student email and sign in to GitHub Desktop using your own GitHub account.
+2. Clone the team repository in GitHub Desktop. Use Branch > New branch and name it `member/it26100899-resources`.
+3. Open the repository in your editor, inspect the paths above and make a real change in your module. Shared files may contain other members' code; edit only the relevant functions.
+4. In GitHub Desktop inspect changed files and diff. Enter an accurate commit summary, click Commit to your branch, then Push origin.
+5. Open a pull request into `main`. Wait for review and checks before merging. Do not upload `.local`, `backend/data`, `.env`, `node_modules`, `.next` or `backend/target`.
+
+For IntelliJ IDEA open [`backend/pom.xml`](../../backend/pom.xml) as the Maven project. For full setup see [`README.md`](../../README.md) and [`docs/GITHUB_WORKFLOW.md`](../../docs/GITHUB_WORKFLOW.md).
